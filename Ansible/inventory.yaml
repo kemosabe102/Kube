@@ -1,0 +1,14 @@
+all:
+  localhost:
+    ansible_connection: local
+  kubecluster:
+    ap-master01:
+    ap-node[01-02]:
+  kubemaster:
+    ap-master01:
+  kubenode:
+    ap-node[01-02]:
+  vars:
+    # Ubuntu uses python3 instead of python2, we need to set the interpreter for ansible
+    ansible_python_interpreter: /usr/bin/python3
+

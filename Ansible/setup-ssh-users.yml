@@ -1,0 +1,20 @@
+# Setup SSH Users
+- hosts: kube-cluster
+  become: yes
+  become_method: sudo
+  tasks :
+   - name: Add Ansible User
+     user:
+       name: ansible
+       group: admin
+       shell: /bin/bash
+   - name: Add authorized keys
+     authorized_key:
+       user: ansible
+       key: "/home/ansible/.ssh/id_rsa.pub"
+   - name: Allow admin users to sudo without password
+     lineinfile:
+       dest: /etc/sudoers
+       state: present
+       regexp: "^%admin"
+       line: "%admin ALL=(ALL) NOPASSWD: ALL"
