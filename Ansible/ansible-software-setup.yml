@@ -1,0 +1,13 @@
+# Setup local system
+- hosts: localhost
+  become: yes
+  become_method: sudo
+  tasks:
+   - name: install packages
+     apt:
+       name: "{{ packages }}"
+       update_cache: yes
+       state: present
+     vars:
+       packages:
+       - sshpass
