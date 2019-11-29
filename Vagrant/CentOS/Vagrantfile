@@ -33,7 +33,7 @@ servers = [
 
 # This script to install k8s using kubeadm will get executed after a box is provisioned
 $configureNetwork = <<-SCRIPT
-    sed -i 's/ONBOOT=no/ONBOOT=yes/g' /etc/sysconfig/network-scripts/ifcfg-enp0s3
+    sed -i 's/ONBOOT=no/ONBOOT=yes/g' /etc/sysconfig/network-scripts/ifcfg-eth1
     sudo systemctl restart network
 SCRIPT
 
@@ -83,6 +83,7 @@ EOF
     sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
     sudo update-alternatives --set arptables /usr/sbin/arptables-legacy
     sudo update-alternatives --set ebtables /usr/sbin/ebtables-legacy
+    
     # Fix for incorrectly routed traffic
     cat <<EOF >  /usr/lib/sysctl.d/00-system.conf
 # Enable netfilter on bridges.
@@ -130,10 +131,17 @@ $configureMaster = <<-SCRIPT
     echo "This is master"
     # ip of this box
     IP_ADDR=`ip route get 1 | awk '{print $NF;exit}'`
+    POD_CIDR="172.20.0.0/16"
+
+    # firewall config
+    sudo firewall-cmd --set-default-zone=home
+    sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
+    sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
+    sudo firewall-cmd --zone=home --permanent --add-port=10250-10252/tcp
 
     # install k8s master
     HOST_NAME=$(hostname -s)
-    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR  --node-name $HOST_NAME --pod-network-cidr=172.20.0.0/16
+    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR  --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR
     #copying credentials to regular user - vagrant
     sudo --user=vagrant mkdir -p /home/vagrant/.kube
     cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
@@ -141,8 +149,9 @@ $configureMaster = <<-SCRIPT
 
     # install Calico pod network addon
     export KUBECONFIG=/etc/kubernetes/admin.conf
-    kubectl apply -f https://raw.githubusercontent.com/ecomm-integration-ballerina/kubernetes-cluster/master/calico/rbac-kdd.yaml
-    kubectl apply -f https://raw.githubusercontent.com/ecomm-integration-ballerina/kubernetes-cluster/master/calico/calico.yaml
+    curl https://docs.projectcalico.org/v3.9/manifests/calico.yaml -O
+    sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
+    kubectl apply -f calico.yaml
 
     kubeadm token create --print-join-command >> /etc/kubeadm_join_cmd.sh
     chmod +x /etc/kubeadm_join_cmd.sh
@@ -154,7 +163,13 @@ $configureMaster = <<-SCRIPT
 SCRIPT
 
 $configureNode = <<-SCRIPT
-    echo "This is worker"
+    echo "This is a worker node"
+
+    # firewall config
+    sudo firewall-cmd --set-default-zone=home
+    sudo firewall-cmd --zone=home --permanent --add-port=10250/tcp
+    sudo firewall-cmd --zone=home --permanent --add-port=30000-32767/tcp
+
     yum install -y sshpass
     sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@172.16.200.50:/etc/kubeadm_join_cmd.sh .
     sh ./kubeadm_join_cmd.sh
@@ -168,7 +183,7 @@ Vagrant.configure("2") do |config|
             config.vm.box = opts[:box]
             config.vm.box_version = opts[:box_version]
             config.vm.hostname = opts[:name]
-            config.vm.network :private_network, ip: opts[:eth1]
+            config.vm.network :public_network, ip: opts[:eth1] # bridged network
             #config.vm.network "private_network", type: "dhcp"
 
             config.vm.provider "virtualbox" do |v|
@@ -184,6 +199,12 @@ Vagrant.configure("2") do |config|
             #config.vm.provision "docker"
 
             config.vm.provision "shell", inline: $configureNetwork
+
+            # set default route via bridged interface
+            config.vm.provision "shell",
+            run: "always",
+            inline: "sudo ip route add 0.0.0.0/0 via 172.16.200.1"
+
             config.vm.provision "shell", inline: $configureBox
 
             if opts[:type] == "master"
