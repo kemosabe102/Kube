@@ -28,6 +28,7 @@ choco install kubernetes-helm
 
 ## Run Vagrantfile to create cluster
 ### In PowerShell, cd to Vagrantfile directory (Vagrant\CentOS)
+Review Vagrantfile code and update as needed
 ```
 vagrant up
 ```
@@ -35,6 +36,7 @@ vagrant up
 ## Post cluster setup
 ### Getting Kube Config
 #### From Bash prompt in VSCode - update remotehost and local path values
+##### Username: vagrant     Password: vagrant
 ```
 scp vagrant@remote.host.ip:/home/vagrant/.kube/config /local/path/to/.kube
 ```

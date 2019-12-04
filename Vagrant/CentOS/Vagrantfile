@@ -1,5 +1,6 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
+# Replace instances of 172.16.200.x to your local network
 
 servers = [
     {
@@ -38,17 +39,22 @@ $configureNetwork = <<-SCRIPT
 SCRIPT
 
 $configureBox = <<-SCRIPT
-
     # install docker v18.09
-    # reason for not using docker provision is that it always installs latest version of the docker, but kubeadm requires 18.09 or older
+    VERSION=18.09.9
+
+    # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
+    # kubeadm requires 18.09 or older
     sudo yum update -y
     sudo yum install -y yum-utils device-mapper-persistent-data lvm2
     sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    
     # yum list docker-ce --showduplicates | sort -r
-    # add grep later for version
-    VERSION=18.09.9
+    # FUTURE IMPROVEMENT: add grep to get VERSION
     sudo yum install -y docker-ce-$VERSION docker-ce-cli-$VERSION containerd.io
+
+    # exclude Docker from getting updated so it won't break compatibility
     sed -i '/distroverpkg=centos-release/a exclude=docker-ce*' /etc/yum.conf
+    
     # run docker commands as vagrant user (sudo not required)
     usermod -aG docker vagrant
 
@@ -70,9 +76,8 @@ $configureBox = <<-SCRIPT
 }
 EOF
 
+    # Setup Docker service
     mkdir -p /etc/systemd/system/docker.service.d
-
-    # Restart Docker
     systemctl daemon-reload
     systemctl enable docker.service
     systemctl start docker.service
@@ -109,9 +114,11 @@ EOF
     setenforce 0
     sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
     
+    # Install kube components
     yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
-    
     systemctl enable --now kubelet
+
+    # exclude Kube components from getting updated during normal maintenance
     sed -i 's/exclude=docker-ce\*/exclude=docker-ce* kubelet kubeadm kubectl/' /etc/yum.conf
 
     # kubelet requires swap off
@@ -122,12 +129,12 @@ EOF
 SCRIPT
 
 $configureMaster = <<-SCRIPT
-    echo "This is master"
+    echo "This is a master node"
     # ip of this box
     IP_ADDR=`ip route get 1 | awk '{print $NF;exit}'`
     POD_CIDR="172.20.0.0/16"
 
-    # firewall config
+    # firewall config to allow necessary master node ports
     sudo firewall-cmd --set-default-zone=home
     sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
     sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
@@ -136,7 +143,8 @@ $configureMaster = <<-SCRIPT
     # install k8s master
     HOST_NAME=$(hostname -s)
     kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR  --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR
-    #copying credentials to regular user - vagrant
+    
+    # copying credentials to regular user - vagrant
     sudo --user=vagrant mkdir -p /home/vagrant/.kube
     cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
     chown $(id -u vagrant):$(id -g vagrant) /home/vagrant/.kube/config
@@ -147,8 +155,8 @@ $configureMaster = <<-SCRIPT
     sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
     kubectl apply -f calico.yaml
 
+    # Create join shell script with v=2 for more verbosity to help with troubleshooting
     kubeadm token create --print-join-command >> /etc/kubeadm_join_cmd.sh
-    # use version 2 of join command for better join info
     sudo sed -i '$ s/$/ --v=2/' /etc/kubeadm_join_cmd.sh
     chmod +x /etc/kubeadm_join_cmd.sh
 
@@ -161,13 +169,15 @@ SCRIPT
 $configureNode = <<-SCRIPT
     echo "This is a worker node"
 
-    # firewall config
+    # firewall config to allow necessary worker node ports
     sudo firewall-cmd --set-default-zone=home
     sudo firewall-cmd --zone=home --permanent --add-port=10250/tcp
     sudo firewall-cmd --zone=home --permanent --add-port=30000-32767/tcp
 
+    # Get and run script from master node to join cluster
+    MASTER_NODE_IP="172.16.200.50"
     yum install -y sshpass
-    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@172.16.200.50:/etc/kubeadm_join_cmd.sh .
+    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_join_cmd.sh .
     sh ./kubeadm_join_cmd.sh
 SCRIPT
 
@@ -196,7 +206,8 @@ Vagrant.configure("2") do |config|
 
             config.vm.provision "shell", inline: $configureNetwork
 
-            # set default route via bridged interface
+            # set default route via bridged interface for the command below that's run on master node 
+            # IP_ADDR=`ip route get 1 | awk '{print $NF;exit}'`
             config.vm.provision "shell",
             run: "always",
             inline: "sudo ip route add 0.0.0.0/0 via 172.16.200.1"
