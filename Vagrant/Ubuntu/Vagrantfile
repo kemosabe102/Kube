@@ -1,0 +1,198 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+# Replace instances of 172.16.200.x to your local network
+
+servers = [
+    {
+        :name => "k8s-master",
+        :type => "master",
+        :box => "ubuntu/bionic64",
+        :box_version => "20191209.0.0",
+        :eth1 => "172.16.200.55",
+        :mem => "3072",
+        :cpu => "2"
+    },
+    {
+        :name => "k8s-node-1",
+        :type => "node",
+        :box => "ubuntu/bionic64",
+        :box_version => "20191209.0.0",
+        :eth1 => "172.16.200.56",
+        :mem => "3072",
+        :cpu => "2"
+    },
+    {
+        :name => "k8s-node-2",
+        :type => "node",
+        :box => "ubuntu/bionic64",
+        :box_version => "20191209.0.0",
+        :eth1 => "172.16.200.57",
+        :mem => "3072",
+        :cpu => "2"
+    }
+]
+
+# This script to install k8s using kubeadm will get executed after a box is provisioned
+$configureBox = <<-SCRIPT
+    # install docker v18.09
+    VERSION=18.09.9
+
+    # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
+    # kubeadm requires 18.09 or older
+    sudo apt-get update -y
+    sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+
+    sudo apt-get update -y
+    sudo apt-get install -y docker-ce=$VERSION
+
+    # exclude Docker from getting updated so it won't break compatibility
+    sudo apt-mark hold docker-ce
+
+    # run docker commands as vagrant user (sudo not required)
+    usermod -aG docker vagrant
+
+    ## Create /etc/docker directory.
+    mkdir /etc/docker
+
+    # Setup daemon.
+    cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2",
+  "storage-opts": [
+    "overlay2.override_kernel_check=true"
+  ]
+}
+EOF
+
+    # Setup Docker service
+    mkdir -p /etc/systemd/system/docker.service.d
+    systemctl daemon-reload
+    systemctl enable docker.service
+    systemctl start docker.service
+
+    # kubeadm prereqs
+    # Ensure iptables tooling does not use the nftables backend
+    sudo update-alternatives --set iptables /usr/sbin/iptables-legacy
+    sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+    sudo update-alternatives --set arptables /usr/sbin/arptables-legacy
+    sudo update-alternatives --set ebtables /usr/sbin/ebtables-legacy
+
+    # install kubeadm
+    sudo apt-get install -y apt-transport-https curl
+    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+    cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+    sudo apt-get update
+    sudo apt-get install -y kubelet kubeadm kubectl
+
+    # exclude Kube components from getting updated during normal maintenance
+    sudo apt-mark hold kubelet kubeadm kubectl
+
+    # kubelet requires swap off
+    swapoff -a
+
+    # keep swap off after reboot
+    sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+SCRIPT
+
+$configureMaster = <<-SCRIPT
+    echo "This is a master node"
+    # ip of this box
+    IP_ADDR=`ip route get 1 | awk '{print $NF;exit}'`
+    POD_CIDR="172.20.0.0/16"
+
+    # firewall config to allow necessary master node ports
+    sudo ufw allow 6443/tcp
+    sudo ufw allow 2379:2380/tcp
+    sudo ufw allow 10250:10252/tcp
+
+    # install k8s master
+    HOST_NAME=$(hostname -s)
+    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR  --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR
+    
+    # copying credentials to regular user - vagrant
+    sudo --user=vagrant mkdir -p /home/vagrant/.kube
+    cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+    chown $(id -u vagrant):$(id -g vagrant) /home/vagrant/.kube/config
+
+    # install Calico pod network addon
+    export KUBECONFIG=/etc/kubernetes/admin.conf
+    curl https://docs.projectcalico.org/v3.9/manifests/calico.yaml -O
+    sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
+    kubectl apply -f calico.yaml
+
+    # Create join shell script with v=2 for more verbosity to help with troubleshooting
+    kubeadm token create --print-join-command >> /etc/kubeadm_join_cmd.sh
+    sudo sed -i '$ s/$/ --v=2/' /etc/kubeadm_join_cmd.sh
+    chmod +x /etc/kubeadm_join_cmd.sh
+
+    # required for setting up password less ssh between guest VMs
+    sudo sed -i "/^[^#]*PasswordAuthentication[[:space:]]no/c\PasswordAuthentication yes" /etc/ssh/sshd_config
+    sudo service sshd restart
+
+SCRIPT
+
+$configureNode = <<-SCRIPT
+    echo "This is a worker node"
+
+    # firewall config to allow necessary worker node ports
+    sudo ufw allow 10250/tcp
+    sudo ufw allow 30000:32767/tcp
+
+    # Get and run script from master node to join cluster
+    MASTER_NODE_IP="172.16.200.50"
+    apt-get install -y sshpass
+    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_join_cmd.sh .
+    sh ./kubeadm_join_cmd.sh
+SCRIPT
+
+Vagrant.configure("2") do |config|
+
+    servers.each do |opts|
+        config.vm.define opts[:name] do |config|
+
+            config.vm.box = opts[:box]
+            config.vm.box_version = opts[:box_version]
+            config.vm.hostname = opts[:name]
+            config.vm.network :public_network, ip: opts[:eth1], bridge: "Intel(R) Dual Band Wireless-AC 8265" # bridged network
+            #config.vm.network "private_network", type: "dhcp"
+
+            config.vm.provider "virtualbox" do |v|
+
+                v.name = opts[:name]
+            	v.customize ["modifyvm", :id, "--groups", "/KubeDevelopment"]
+                v.customize ["modifyvm", :id, "--memory", opts[:mem]]
+                v.customize ["modifyvm", :id, "--cpus", opts[:cpu]]
+
+            end
+
+            # we cannot use this because we can't install the docker version we want - https://github.com/hashicorp/vagrant/issues/4871
+            #config.vm.provision "docker"
+
+            # set default route via bridged interface for the command below that's run on master node 
+            # IP_ADDR=`ip route get 1 | awk '{print $NF;exit}'`
+            config.vm.provision "shell",
+            run: "always",
+            inline: "sudo ip route add 0.0.0.0/0 via 172.16.200.1"
+
+            config.vm.provision "shell", inline: $configureBox
+
+            if opts[:type] == "master"
+                config.vm.provision "shell", inline: $configureMaster
+            else
+                config.vm.provision "shell", inline: $configureNode
+            end
+
+        end
+
+    end
+
+end 
