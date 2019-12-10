@@ -9,8 +9,8 @@ servers = [
         :box => "centos/7",
         :box_version => "1905.1",
         :eth1 => "172.16.200.50",
-        :mem => "2048",
-        :cpu => "2"
+        :mem => "4096",
+        :cpu => "3"
     },
     {
         :name => "k8s-node-1",
