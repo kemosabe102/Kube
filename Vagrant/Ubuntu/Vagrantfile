@@ -34,7 +34,7 @@ servers = [
 
 # This script to install k8s using kubeadm will get executed after a box is provisioned
 $configureBox = <<-SCRIPT
-    # install docker v18.09
+    # install docker v18.09 - https://docs.docker.com/v17.09/engine/installation/linux/docker-ce/ubuntu/#install-docker-ce-1
     VERSION=18.09.9
 
     # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
@@ -84,7 +84,7 @@ EOF
     sudo update-alternatives --set arptables /usr/sbin/arptables-legacy
     sudo update-alternatives --set ebtables /usr/sbin/ebtables-legacy
 
-    # install kubeadm
+    # install kubeadm - https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
     sudo apt-get install -y apt-transport-https curl
     curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
     cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list

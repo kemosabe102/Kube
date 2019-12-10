@@ -39,7 +39,7 @@ $configureNetwork = <<-SCRIPT
 SCRIPT
 
 $configureBox = <<-SCRIPT
-    # install docker v18.09
+    # install docker v18.09 - https://docs.docker.com/v17.09/engine/installation/linux/docker-ce/centos/#install-docker-ce-1
     VERSION=18.09.9
 
     # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
@@ -99,7 +99,7 @@ net.ipv4.ip_forward = 1
 EOF
     sysctl --system
 
-    # install kubeadm
+    # install kubeadm - https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
     cat <<EOF > /etc/yum.repos.d/kubernetes.repo
 [kubernetes]
 name=Kubernetes
