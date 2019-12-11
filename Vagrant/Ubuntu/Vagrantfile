@@ -34,21 +34,22 @@ servers = [
 
 # This script to install k8s using kubeadm will get executed after a box is provisioned
 $configureBox = <<-SCRIPT
-    # install docker v18.09 - https://docs.docker.com/v17.09/engine/installation/linux/docker-ce/ubuntu/#install-docker-ce-1
-    VERSION=18.09.9
+    # install docker v18.09 - https://docs.docker.com/install/linux/docker-ce/ubuntu/#install-docker-engine---community-1
+    # list available versions - apt-cache madison docker-ce
+    VERSION=5:18.09.9~3-0~ubuntu-bionic
 
     # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
     # kubeadm requires 18.09 or older
     sudo apt-get update -y
-    sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+    sudo apt-get install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
     sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
 
     sudo apt-get update -y
-    sudo apt-get install -y docker-ce=$VERSION
+    sudo apt-get install -y docker-ce=$VERSION docker-ce-cli=$VERSION containerd.io
 
     # exclude Docker from getting updated so it won't break compatibility
-    sudo apt-mark hold docker-ce
+    sudo apt-mark hold docker-ce docker-ce-cli containerd.io
 
     # run docker commands as vagrant user (sudo not required)
     usermod -aG docker vagrant
@@ -148,7 +149,7 @@ $configureNode = <<-SCRIPT
     sudo ufw allow 30000:32767/tcp
 
     # Get and run script from master node to join cluster
-    MASTER_NODE_IP="172.16.200.50"
+    MASTER_NODE_IP="172.16.200.55"
     apt-get install -y sshpass
     sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_join_cmd.sh .
     sh ./kubeadm_join_cmd.sh

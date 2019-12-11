@@ -8,7 +8,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.We
 
 ### Install Virtualbox
 ```
-choco install virtualbox
+choco install virtualbox --version=6.0.14 --params "/ExtensionPack"
 ```
 
 ### Install Vagrant
