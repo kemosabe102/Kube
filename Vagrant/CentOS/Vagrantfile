@@ -40,7 +40,7 @@ SCRIPT
 
 $configureBox = <<-SCRIPT
     # install docker v18.09 - https://docs.docker.com/v17.09/engine/installation/linux/docker-ce/centos/#install-docker-ce-1
-    VERSION=18.09.9
+    DOCKER_VERSION=18.09.9
 
     # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
     # kubeadm requires 18.09 or older
@@ -49,19 +49,19 @@ $configureBox = <<-SCRIPT
     sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     
     # yum list docker-ce --showduplicates | sort -r
-    # FUTURE IMPROVEMENT: add grep to get VERSION
-    sudo yum install -y docker-ce-$VERSION docker-ce-cli-$VERSION containerd.io
+    # FUTURE IMPROVEMENT: add grep to get DOCKER_VERSION
+    sudo yum install -y docker-ce-$DOCKER_VERSION docker-ce-cli-$DOCKER_VERSION containerd.io
 
     # exclude Docker from getting updated so it won't break compatibility
     sed -i '/distroverpkg=centos-release/a exclude=docker-ce*' /etc/yum.conf
     
-    # run docker commands as vagrant user (sudo not required)
+    # run docker commands as vagrant user
     usermod -aG docker vagrant
 
     ## Create /etc/docker directory.
     mkdir /etc/docker
 
-    # Setup daemon.
+    # Setup cgroupdriver as systemd - https://kubernetes.io/docs/setup/cri/
     cat > /etc/docker/daemon.json <<EOF
 {
   "exec-opts": ["native.cgroupdriver=systemd"],
@@ -189,7 +189,7 @@ Vagrant.configure("2") do |config|
             config.vm.box = opts[:box]
             config.vm.box_version = opts[:box_version]
             config.vm.hostname = opts[:name]
-            config.vm.network :public_network, ip: opts[:eth1] # bridged network
+            config.vm.network :public_network, ip: opts[:eth1], bridge: "YOUR NETWORK ADAPTER NAME" # bridged network
             #config.vm.network "private_network", type: "dhcp"
 
             config.vm.provider "virtualbox" do |v|
