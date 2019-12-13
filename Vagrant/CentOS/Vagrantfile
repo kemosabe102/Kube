@@ -13,8 +13,8 @@ servers = [
     {
         :name => "k8s-master",
         :type => "master",
-        :box => "centos/7",
-        :box_version => "1905.1",
+        :box => "generic/centos7",
+        :box_version => "2.0.6",
         :eth1 => "172.16.200.50",
         :mem => "4096",
         :cpu => "3"
@@ -22,8 +22,8 @@ servers = [
     {
         :name => "k8s-node-1",
         :type => "node",
-        :box => "centos/7",
-        :box_version => "1905.1",
+        :box => "generic/centos7",
+        :box_version => "2.0.6",
         :eth1 => "172.16.200.51",
         :mem => "2048",
         :cpu => "2"
@@ -31,8 +31,8 @@ servers = [
     {
         :name => "k8s-node-2",
         :type => "node",
-        :box => "centos/7",
-        :box_version => "1905.1",
+        :box => "generic/centos7",
+        :box_version => "2.0.6",
         :eth1 => "172.16.200.52",
         :mem => "2048",
         :cpu => "2"
@@ -122,7 +122,8 @@ EOF
     sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
     
     # Install kube components
-    yum install -y kubelet=$KUBE_VERSION kubeadm=$KUBE_VERSION kubectl=$KUBE_VERSION --disableexcludes=kubernetes
+    # yum install -y kubelet-$KUBE_VERSION kubeadm-$KUBE_VERSION kubectl-$KUBE_VERSION --disableexcludes=kubernetes
+    yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
     systemctl enable --now kubelet
 
     # exclude Kube components from getting updated during normal maintenance
@@ -133,6 +134,13 @@ EOF
 
     # keep swap off after reboot
     sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+    # add hostname to /etc/hosts file
+    ETC_HOSTS=/etc/hosts
+    IP_ADDR=`ip route get 1 | awk '{print $NF;exit}'`
+    HOST_NAME=$(hostname -s)
+    HOSTS_LINE="$IP_ADDR\t$HOST_NAME"
+    sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
 SCRIPT
 
 $configureMaster = <<-SCRIPT
@@ -140,17 +148,20 @@ $configureMaster = <<-SCRIPT
     # ip of this box
     IP_ADDR=`ip route get 1 | awk '{print $NF;exit}'`
     POD_CIDR="172.20.0.0/16"
+    CALICO_VERSION=v3.10
 
-    # firewall config to allow necessary master node ports
-    sudo firewall-cmd --set-default-zone=home
-    sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
-    sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
-    sudo firewall-cmd --zone=home --permanent --add-port=10250-10252/tcp
+    # firewall config to allow necessary master node ports - allowing kube subnet
+    sudo firewall-cmd --permanent --set-default-zone=home
+    sudo firewall-cmd --permanent --zone=home --add-rich-rule='rule family=ipv4 source address=172.16.200.0/24 accept'
+    # sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
+    # sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
+    # sudo firewall-cmd --zone=home --permanent --add-port=10250-10252/tcp
 
     # install k8s master
     HOST_NAME=$(hostname -s)
-    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR  --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR
-    
+    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR,$HOST_NAME \
+    --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR --control-plane-endpoint $HOST_NAME:6443
+
     # copying credentials to regular user - vagrant
     sudo --user=vagrant mkdir -p /home/vagrant/.kube
     cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
@@ -158,7 +169,7 @@ $configureMaster = <<-SCRIPT
 
     # install Calico pod network addon
     export KUBECONFIG=/etc/kubernetes/admin.conf
-    curl https://docs.projectcalico.org/v3.9/manifests/calico.yaml -O
+    curl https://docs.projectcalico.org/$CALICO_VERSION/manifests/calico.yaml -O
     sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
     kubectl apply -f calico.yaml
 
@@ -175,14 +186,20 @@ SCRIPT
 
 $configureNode = <<-SCRIPT
     echo "This is a worker node"
+    # Add master node to /etc/hosts file
+    ETC_HOSTS=/etc/hosts
+    MASTER_NODE_IP="172.16.200.50"
+    MASTER_HOST_NAME="k8s-master"
+    HOSTS_LINE="$MASTER_NODE_IP\t$MASTER_HOST_NAME"
+    sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
 
-    # firewall config to allow necessary worker node ports
-    sudo firewall-cmd --set-default-zone=home
-    sudo firewall-cmd --zone=home --permanent --add-port=10250/tcp
-    sudo firewall-cmd --zone=home --permanent --add-port=30000-32767/tcp
+    # firewall config to allow necessary worker node ports - allowing kube subnet
+    sudo firewall-cmd --permanent --set-default-zone=home
+    sudo firewall-cmd --permanent --zone=home --add-rich-rule='rule family=ipv4 source address=172.16.200.0/24 accept'
+    # sudo firewall-cmd --zone=home --permanent --add-port=10250/tcp
+    # sudo firewall-cmd --zone=home --permanent --add-port=30000-32767/tcp
 
     # Get and run script from master node to join cluster
-    MASTER_NODE_IP="172.16.200.50"
     yum install -y sshpass
     sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_join_cmd.sh .
     sh ./kubeadm_join_cmd.sh
@@ -196,7 +213,7 @@ Vagrant.configure("2") do |config|
             config.vm.box = opts[:box]
             config.vm.box_version = opts[:box_version]
             config.vm.hostname = opts[:name]
-            config.vm.network :public_network, ip: opts[:eth1], bridge: "YOUR NETWORK ADAPTER NAME" # bridged network
+            config.vm.network :public_network, ip: opts[:eth1], bridge: "Intel(R) Dual Band Wireless-AC 8265" # bridged network
             #config.vm.network "private_network", type: "dhcp"
 
             config.vm.provider "virtualbox" do |v|

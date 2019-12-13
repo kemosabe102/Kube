@@ -97,6 +97,13 @@ EOF
 
     # keep swap off after reboot
     sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+    # add hostname to /etc/hosts file
+    ETC_HOSTS=/etc/hosts
+    IP_ADDR=`ip route get 1 | awk '{print $7;exit}'`
+    HOST_NAME=$(hostname)
+    HOSTS_LINE="$IP_ADDR\t$HOST_NAME"
+    sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
 SCRIPT
 
 $configureMaster = <<-SCRIPT
@@ -104,16 +111,19 @@ $configureMaster = <<-SCRIPT
     # ip of this box
     IP_ADDR=`ip route get 1 | awk '{print $7;exit}'`
     POD_CIDR="172.20.0.0/16"
+    CALICO_VERSION=v3.10
 
-    # firewall config to allow necessary master node ports
-    sudo ufw allow 22/tcp
-    sudo ufw allow 6443/tcp
-    sudo ufw allow 2379:2380/tcp
-    sudo ufw allow 10250:10252/tcp
+    # firewall config to allow necessary master node ports - allowing kube subnet
+    # sudo ufw allow 22/tcp
+    # sudo ufw allow 6443/tcp
+    # sudo ufw allow 2379:2380/tcp
+    # sudo ufw allow 10250:10252/tcp
+    sudo ufw allow from 172.16.200.0/24
 
     # install k8s master
     HOST_NAME=$(hostname)
-    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR  --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR
+    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR,$HOST_NAME \
+    --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR --control-plane-endpoint $HOST_NAME:6443
     
     # copying credentials to regular user - vagrant
     sudo --user=vagrant mkdir -p /home/vagrant/.kube
@@ -122,7 +132,7 @@ $configureMaster = <<-SCRIPT
 
     # install Calico pod network addon
     export KUBECONFIG=/etc/kubernetes/admin.conf
-    curl https://docs.projectcalico.org/v3.9/manifests/calico.yaml -O
+    curl https://docs.projectcalico.org/$CALICO_VERSION/manifests/calico.yaml -O
     sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
     kubectl apply -f calico.yaml
 
@@ -139,14 +149,20 @@ SCRIPT
 
 $configureNode = <<-SCRIPT
     echo "This is a worker node"
+    # Add master node to /etc/hosts file
+    ETC_HOSTS=/etc/hosts
+    MASTER_NODE_IP="172.16.200.55"
+    MASTER_HOST_NAME="k8s-master"
+    HOSTS_LINE="$MASTER_NODE_IP\t$MASTER_HOST_NAME"
+    sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
 
-    # firewall config to allow necessary worker node ports
-    sudo ufw allow 22/tcp
-    sudo ufw allow 10250/tcp
-    sudo ufw allow 30000:32767/tcp
+    # firewall config to allow necessary worker node ports - allowing kube subnet
+    # sudo ufw allow 22/tcp
+    # sudo ufw allow 10250/tcp
+    # sudo ufw allow 30000:32767/tcp
+    sudo ufw allow from 172.16.200.0/24
 
     # Get and run script from master node to join cluster
-    MASTER_NODE_IP="172.16.200.55"
     apt-get install -y sshpass
     sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_join_cmd.sh .
     sh ./kubeadm_join_cmd.sh

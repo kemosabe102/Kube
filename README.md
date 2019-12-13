@@ -41,6 +41,13 @@ vagrant up
 scp vagrant@remote.host.ip:/home/vagrant/.kube/config /local/path/to/.kube
 ```
 
+### Add master node IP to your hosts file
+##### Windows - C:\Windows\System32\drivers\etc\hosts
+##### Linux - /etc/hosts
+```
+MASTER_NODE_IP	k8s-master
+```
+
 ### Test connectivity
 ```
 kubectl config view
