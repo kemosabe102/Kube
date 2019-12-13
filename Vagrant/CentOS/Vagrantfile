@@ -48,7 +48,7 @@ SCRIPT
 $configureBox = <<-SCRIPT
     # install docker v18.09 - https://docs.docker.com/v17.09/engine/installation/linux/docker-ce/centos/#install-docker-ce-1
     DOCKER_VERSION=18.09.9
-    KUBE_VERSION=1.16.4-00
+    KUBE_VERSION=1.16.4-0
 
     # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
     # kubeadm requires 18.09 or older
@@ -122,8 +122,8 @@ EOF
     sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
     
     # Install kube components
-    # yum install -y kubelet-$KUBE_VERSION kubeadm-$KUBE_VERSION kubectl-$KUBE_VERSION --disableexcludes=kubernetes
-    yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+    yum install -y kubelet-$KUBE_VERSION kubeadm-$KUBE_VERSION kubectl-$KUBE_VERSION --disableexcludes=kubernetes
+    # yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
     systemctl enable --now kubelet
 
     # exclude Kube components from getting updated during normal maintenance
