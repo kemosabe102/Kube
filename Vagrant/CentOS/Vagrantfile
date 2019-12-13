@@ -151,7 +151,7 @@ $configureMaster = <<-SCRIPT
     CALICO_VERSION=v3.10
 
     # firewall config to allow necessary master node ports - allowing kube subnet
-    sudo firewall-cmd --permanent --set-default-zone=home
+    sudo firewall-cmd --set-default-zone=home
     sudo firewall-cmd --permanent --zone=home --add-rich-rule='rule family=ipv4 source address=172.16.200.0/24 accept'
     # sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
     # sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
