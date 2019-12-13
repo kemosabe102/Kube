@@ -141,6 +141,10 @@ EOF
     HOST_NAME=$(hostname -s)
     HOSTS_LINE="$IP_ADDR\t$HOST_NAME"
     sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
+
+    # firewall config to allow access from kube subnet - remove rich rule to only allow only specific ports
+    sudo firewall-cmd --set-default-zone=home
+    sudo firewall-cmd --permanent --zone=home --add-rich-rule='rule family=ipv4 source address=172.16.200.0/24 accept'
 SCRIPT
 
 $configureMaster = <<-SCRIPT
@@ -150,12 +154,10 @@ $configureMaster = <<-SCRIPT
     POD_CIDR="172.20.0.0/16"
     CALICO_VERSION=v3.10
 
-    # firewall config to allow necessary master node ports - allowing kube subnet
-    sudo firewall-cmd --set-default-zone=home
-    sudo firewall-cmd --permanent --zone=home --add-rich-rule='rule family=ipv4 source address=172.16.200.0/24 accept'
-    # sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
-    # sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
-    # sudo firewall-cmd --zone=home --permanent --add-port=10250-10252/tcp
+    # firewall config to allow necessary master node ports
+    sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
+    sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
+    sudo firewall-cmd --zone=home --permanent --add-port=10250-10252/tcp
 
     # install k8s master
     HOST_NAME=$(hostname -s)
@@ -193,11 +195,9 @@ $configureNode = <<-SCRIPT
     HOSTS_LINE="$MASTER_NODE_IP\t$MASTER_HOST_NAME"
     sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
 
-    # firewall config to allow necessary worker node ports - allowing kube subnet
-    sudo firewall-cmd --permanent --set-default-zone=home
-    sudo firewall-cmd --permanent --zone=home --add-rich-rule='rule family=ipv4 source address=172.16.200.0/24 accept'
-    # sudo firewall-cmd --zone=home --permanent --add-port=10250/tcp
-    # sudo firewall-cmd --zone=home --permanent --add-port=30000-32767/tcp
+    # firewall config to allow necessary worker node ports
+    sudo firewall-cmd --zone=home --permanent --add-port=10250/tcp
+    sudo firewall-cmd --zone=home --permanent --add-port=30000-32767/tcp
 
     # Get and run script from master node to join cluster
     yum install -y sshpass
