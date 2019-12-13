@@ -6,6 +6,8 @@
 #   eth1 IP addresses
 #   bridged network config
 #   Replace instances of 172.16.200.x to your local network
+#   DOCKER_VERSION
+#   KUBE_VERSION
 
 servers = [
     {
@@ -42,6 +44,7 @@ $configureBox = <<-SCRIPT
     # install docker v18.09 - https://docs.docker.com/install/linux/docker-ce/ubuntu/#install-docker-engine---community-1
     # list available versions - apt-cache madison docker-ce
     DOCKER_VERSION=5:18.09.9~3-0~ubuntu-bionic
+    KUBE_VERSION=1.16.4-00
 
     # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
     # kubeadm requires 18.09 or older
@@ -79,13 +82,12 @@ EOF
     systemctl start docker.service
 
     # install kubeadm - https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-    sudo apt-get install -y apt-transport-https curl
     curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
     cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
 deb https://apt.kubernetes.io/ kubernetes-xenial main
 EOF
     sudo apt-get update
-    sudo apt-get install -y kubelet kubeadm kubectl
+    sudo apt-get install -y kubelet=$KUBE_VERSION kubeadm=$KUBE_VERSION kubectl=$KUBE_VERSION
 
     # exclude Kube components from getting updated during normal maintenance
     sudo apt-mark hold kubelet kubeadm kubectl

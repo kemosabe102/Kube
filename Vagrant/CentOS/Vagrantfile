@@ -1,6 +1,13 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
-# Replace instances of 172.16.200.x to your local network
+#
+# Change the following for your network setup:
+#   MASTER_NODE_IP
+#   eth1 IP addresses
+#   bridged network config
+#   Replace instances of 172.16.200.x to your local network
+#   DOCKER_VERSION
+#   KUBE_VERSION
 
 servers = [
     {
@@ -41,6 +48,7 @@ SCRIPT
 $configureBox = <<-SCRIPT
     # install docker v18.09 - https://docs.docker.com/v17.09/engine/installation/linux/docker-ce/centos/#install-docker-ce-1
     DOCKER_VERSION=18.09.9
+    KUBE_VERSION=1.16.4-00
 
     # reason for not using docker provision in Vagrant config is that it always installs the latest version of Docker
     # kubeadm requires 18.09 or older
@@ -49,7 +57,6 @@ $configureBox = <<-SCRIPT
     sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     
     # yum list docker-ce --showduplicates | sort -r
-    # FUTURE IMPROVEMENT: add grep to get DOCKER_VERSION
     sudo yum install -y docker-ce-$DOCKER_VERSION docker-ce-cli-$DOCKER_VERSION containerd.io
 
     # exclude Docker from getting updated so it won't break compatibility
@@ -115,7 +122,7 @@ EOF
     sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
     
     # Install kube components
-    yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+    yum install -y kubelet=$KUBE_VERSION kubeadm=$KUBE_VERSION kubectl=$KUBE_VERSION --disableexcludes=kubernetes
     systemctl enable --now kubelet
 
     # exclude Kube components from getting updated during normal maintenance
