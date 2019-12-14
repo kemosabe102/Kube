@@ -154,10 +154,11 @@ $configureMaster = <<-SCRIPT
     POD_CIDR="172.20.0.0/16"
     CALICO_VERSION=v3.10
 
-    # firewall config to allow necessary master node ports
+    # firewall config to allow necessary master node ports - have to reload centos firewall-cmd after adding rules
     sudo firewall-cmd --zone=home --permanent --add-port=6443/tcp
     sudo firewall-cmd --zone=home --permanent --add-port=2379-2380/tcp
     sudo firewall-cmd --zone=home --permanent --add-port=10250-10252/tcp
+    sudo firewall-cmd --reload
 
     # install k8s master
     HOST_NAME=$(hostname -s)
@@ -195,9 +196,10 @@ $configureNode = <<-SCRIPT
     HOSTS_LINE="$MASTER_NODE_IP\t$MASTER_HOST_NAME"
     sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
 
-    # firewall config to allow necessary worker node ports
+    # firewall config to allow necessary worker node ports - have to reload centos firewall-cmd after adding rules
     sudo firewall-cmd --zone=home --permanent --add-port=10250/tcp
     sudo firewall-cmd --zone=home --permanent --add-port=30000-32767/tcp
+    sudo firewall-cmd --reload
 
     # Get and run script from master node to join cluster
     yum install -y sshpass
