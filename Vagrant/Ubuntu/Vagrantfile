@@ -14,7 +14,7 @@ servers = [
         :name => "k8s-master",
         :type => "master",
         :box => "ubuntu/bionic64",
-        :box_version => "20191209.0.0",
+        :box_version => "20200107.0.0",
         :eth1 => "172.16.200.55",
         :mem => "4096",
         :cpu => "3"
@@ -23,18 +23,18 @@ servers = [
         :name => "k8s-node-1",
         :type => "node",
         :box => "ubuntu/bionic64",
-        :box_version => "20191209.0.0",
+        :box_version => "20200107.0.0",
         :eth1 => "172.16.200.56",
-        :mem => "2048",
+        :mem => "4096",
         :cpu => "2"
     },
     {
         :name => "k8s-node-2",
         :type => "node",
         :box => "ubuntu/bionic64",
-        :box_version => "20191209.0.0",
+        :box_version => "20200107.0.0",
         :eth1 => "172.16.200.57",
-        :mem => "2048",
+        :mem => "4096",
         :cpu => "2"
     }
 ]
