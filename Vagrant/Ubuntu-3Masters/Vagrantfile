@@ -9,42 +9,53 @@
 #   DOCKER_VERSION
 #   KUBE_VERSION
 
+# Documentation for HA Master setup using Kubeadm
+# https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/
+
 servers = [
     {
-        :name => "k8s-master",
+        :name => "k8s-lb01",
+        :type => "loadbalancer",
+        :box => "ubuntu/bionic64",
+        :box_version => "20200124.0.0",
+        :eth1 => "172.16.200.60",
+        :mem => "1024",
+        :cpu => "1"
+    },
+    {
+        :name => "k8s-master01",
         :type => "master",
         :box => "ubuntu/bionic64",
         :box_version => "20200124.0.0",
         :eth1 => "172.16.200.55",
-        :mem => "4096",
+        :mem => "3072",
         :cpu => "3"
     },
     {
-        :name => "k8s-node-1",
-        :type => "node",
+        :name => "k8s-master02",
+        :type => "smaster",
         :box => "ubuntu/bionic64",
         :box_version => "20200124.0.0",
         :eth1 => "172.16.200.56",
-        :mem => "4096",
-        :cpu => "2"
+        :mem => "3072",
+        :cpu => "3"
     },
     {
-        :name => "k8s-node-2",
-        :type => "node",
+        :name => "k8s-master03",
+        :type => "smaster",
         :box => "ubuntu/bionic64",
         :box_version => "20200124.0.0",
         :eth1 => "172.16.200.57",
-        :mem => "4096",
-        :cpu => "2"
+        :mem => "3072",
+        :cpu => "3"
     }
 ]
 
-# This script to install k8s using kubeadm will get executed after a box is provisioned
-$configureBox = <<-SCRIPT
+# This script will install Docker
+$installDocker = <<-SCRIPT
     # install docker v18.09 - https://docs.docker.com/install/linux/docker-ce/ubuntu/#install-docker-engine---community-1
     # list available versions - apt-cache madison docker-ce
     DOCKER_VERSION=5:19.03.4~3-0~ubuntu-$(lsb_release -cs)
-    KUBE_VERSION=1.17.2-00
 
     sudo apt-get upgrade -y
 
@@ -94,6 +105,23 @@ EOF
     systemctl enable docker.service
     systemctl start docker.service
 
+    # kubelet requires swap off
+    swapoff -a
+
+    # keep swap off after reboot
+    sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+    # add hostname to /etc/hosts file
+    ETC_HOSTS=/etc/hosts
+    IP_ADDR=`ip route get 1 | awk '{print $7;exit}'`
+    HOST_NAME=$(hostname)
+    HOSTS_LINE="$IP_ADDR\t$HOST_NAME"
+    sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
+SCRIPT
+
+# This script to install k8s using kubeadm will get executed after a box is provisioned
+$installKubeComponents = <<-SCRIPT
+    KUBE_VERSION=1.17.2-00
     # install kubeadm - https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
     curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
     echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee -a /etc/apt/sources.list.d/kubernetes.list
@@ -125,6 +153,12 @@ $configureMaster = <<-SCRIPT
     POD_CIDR="172.20.0.0/16"
     CALICO_VERSION=v3.10
 
+    # setup load balancer's hostname in hosts file
+    ETC_HOSTS=/etc/hosts
+    LB_HOSTNAME="k8s-lb01"
+    HOSTS_LINE="172.16.200.60\t$LB_HOSTNAME"
+    sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
+
     # firewall config to allow necessary master node ports - allowing kube subnet
     # sudo ufw allow 22/tcp
     # sudo ufw allow 6443/tcp
@@ -134,9 +168,16 @@ $configureMaster = <<-SCRIPT
 
     # install k8s master
     HOST_NAME=$(hostname)
-    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR,$HOST_NAME \
-    --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR --control-plane-endpoint $HOST_NAME:6443
+    #kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR,$HOST_NAME \
+    #--node-name $HOST_NAME --pod-network-cidr=$POD_CIDR --control-plane-endpoint $HOST_NAME:6443
     
+    # install k8s master with load balancer
+    # generate cert key to pass to join script later
+    # https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-alpha/#cmd-certs-certificate-key
+    CERT_KEY=$(kubeadm alpha certs certificate-key)
+    sudo kubeadm init --control-plane-endpoint "$LB_HOSTNAME:6443" --upload-certs \
+    --pod-network-cidr=$POD_CIDR --certificate-key $CERT_KEY
+
     # copying credentials to regular user - vagrant
     sudo --user=vagrant mkdir -p /home/vagrant/.kube
     cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
@@ -148,10 +189,16 @@ $configureMaster = <<-SCRIPT
     sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
     kubectl apply -f calico.yaml
 
-    # Create join shell script with v=2 for more verbosity to help with troubleshooting
+    # Create join shell script for worker nodes with v=2 for more verbosity to help with troubleshooting
     kubeadm token create --print-join-command >> /etc/kubeadm_join_cmd.sh
     sudo sed -i '$ s/$/ --v=2/' /etc/kubeadm_join_cmd.sh
     chmod +x /etc/kubeadm_join_cmd.sh
+
+    # Create join shell script for master nodes with v=2 for more verbosity to help with troubleshooting
+    # https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-token/#cmd-token-create
+    kubeadm token create --print-join-command --certificate-key $CERT_KEY >> /etc/kubeadm_master_join_cmd.sh
+    sudo sed -i '$ s/$/ --v=2/' /etc/kubeadm_master_join_cmd.sh
+    chmod +x /etc/kubeadm_master_join_cmd.sh
 
     # required for setting up password less ssh between guest VMs
     sudo sed -i "/^[^#]*PasswordAuthentication[[:space:]]no/c\PasswordAuthentication yes" /etc/ssh/sshd_config
@@ -159,13 +206,18 @@ $configureMaster = <<-SCRIPT
 
 SCRIPT
 
-$configureNode = <<-SCRIPT
-    echo "This is a worker node"
+$configureSecondaryMasters = <<-SCRIPT
+    echo "This is a secondary master node"
     # Add master node to /etc/hosts file
     ETC_HOSTS=/etc/hosts
     MASTER_NODE_IP="172.16.200.55"
-    MASTER_HOST_NAME="k8s-master"
+    MASTER_HOST_NAME="k8s-master01"
     HOSTS_LINE="$MASTER_NODE_IP\t$MASTER_HOST_NAME"
+    sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
+
+    # setup load balancer's hostname in hosts file
+    LB_HOSTNAME="k8s-lb01"
+    HOSTS_LINE="172.16.200.60\t$LB_HOSTNAME"
     sudo -- sh -c -e "echo '$HOSTS_LINE' >> $ETC_HOSTS"
 
     # firewall config to allow necessary worker node ports - allowing kube subnet
@@ -176,8 +228,69 @@ $configureNode = <<-SCRIPT
 
     # Get and run script from master node to join cluster
     apt-get install -y sshpass
-    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_join_cmd.sh .
-    sh ./kubeadm_join_cmd.sh
+    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_master_join_cmd.sh .
+    sh ./kubeadm_master_join_cmd.sh
+SCRIPT
+
+$configureLoadBalancer = <<-SCRIPT
+    echo "This is a load balancer node"
+    # Add master nodes to /etc/hosts file
+    ETC_HOSTS=/etc/hosts
+    M1_HOSTS_LINE="172.16.200.55\tk8s-master01"
+    M2_HOSTS_LINE="172.16.200.56\tk8s-master02"
+    M3_HOSTS_LINE="172.16.200.57\tk8s-master03"
+    sudo -- sh -c -e "echo '$M1_HOSTS_LINE' >> $ETC_HOSTS"
+    sudo -- sh -c -e "echo '$M2_HOSTS_LINE' >> $ETC_HOSTS"
+    sudo -- sh -c -e "echo '$M3_HOSTS_LINE' >> $ETC_HOSTS"
+
+    # firewall config to allow necessary worker node ports - allowing kube subnet
+    # sudo ufw allow 22/tcp
+    # sudo ufw allow 10250/tcp
+    # sudo ufw allow 30000:32767/tcp
+    sudo ufw allow from 172.16.200.0/24
+
+    # get haproxy
+    # create config file
+    mkdir haproxy
+    cd ./haproxy/
+    touch ./haproxy.cfg
+    # https://www.ssltrust.com.au/help/setup-guides/haproxy-reverse-proxy-setup-guide
+    cat > ./haproxy.cfg <<EOF
+defaults
+    mode tcp
+    timeout connect 2000ms
+    timeout client 10000ms
+    timeout server 10000ms
+
+frontend localhost
+    # Only bind on 80 if you also want to listen for connections on 80
+    bind *:80
+    bind *:6443
+    option tcplog
+    default_backend nodes
+
+backend nodes
+    balance roundrobin
+    option ssl-hello-chk
+    # Add an entry for each of your backend servers and their resolvable hostnames
+    server k8s-master01 172.16.200.55:6443 check
+    server k8s-master02 172.16.200.56:6443 check
+    server k8s-master03 172.16.200.57:6443 check
+EOF
+
+    # create dockerfile
+    touch ./Dockerfile
+    cat > ./Dockerfile <<EOF
+# For docker image updates - https://hub.docker.com/_/haproxy
+FROM haproxy:2.1.2
+COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
+EOF
+
+    # build docker image
+    docker build -t my-haproxy .
+
+    # run haproxy container
+    docker run -d -p 6443:6443 -p 80:80 --name k8s-haproxy my-haproxy
 SCRIPT
 
 Vagrant.configure("2") do |config|
@@ -209,12 +322,18 @@ Vagrant.configure("2") do |config|
             run: "always",
             inline: "sudo ip route add 0.0.0.0/0 via 172.16.200.1"
 
-            config.vm.provision "shell", inline: $configureBox
+            config.vm.provision "shell", inline: $installDocker
 
+            if opts[:type] == "loadbalancer"
+                config.vm.provision "shell", inline: $configureLoadBalancer
+            end
             if opts[:type] == "master"
+                config.vm.provision "shell", inline: $installKubeComponents
                 config.vm.provision "shell", inline: $configureMaster
-            else
-                config.vm.provision "shell", inline: $configureNode
+            end
+            if opts[:type] == "smaster"
+                config.vm.provision "shell", inline: $installKubeComponents
+                config.vm.provision "shell", inline: $configureSecondaryMasters
             end
 
         end
