@@ -257,7 +257,11 @@ $configureLoadBalancer = <<-SCRIPT
     # https://www.ssltrust.com.au/help/setup-guides/haproxy-reverse-proxy-setup-guide
     cat > ./haproxy.cfg <<EOF
 defaults
+    log global
+    option tcplog
     mode tcp
+    errorfile 503 /usr/local/etc/haproxy/errors/503.http
+    errorfile 504 /usr/local/etc/haproxy/errors/504.http
     timeout connect 2000ms
     timeout client 10000ms
     timeout server 10000ms
@@ -266,16 +270,23 @@ frontend localhost
     # Only bind on 80 if you also want to listen for connections on 80
     bind *:80
     bind *:6443
-    option tcplog
-    default_backend nodes
+    stats uri /proxystats
+    default_backend k8sMasters
 
-backend nodes
+backend k8sMasters
     balance roundrobin
     option ssl-hello-chk
     # Add an entry for each of your backend servers and their resolvable hostnames
     server k8s-master01 172.16.200.55:6443 check
     server k8s-master02 172.16.200.56:6443 check
     server k8s-master03 172.16.200.57:6443 check
+
+listen stats
+    bind :9999
+    mode http
+    stats enable
+    stats hide-version
+    stats uri /stats
 EOF
 
     # create dockerfile
@@ -287,10 +298,10 @@ COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
 EOF
 
     # build docker image
-    docker build -t my-haproxy .
+    docker build -t k8s-haproxy .
 
     # run haproxy container
-    docker run -d -p 6443:6443 -p 80:80 --name k8s-haproxy my-haproxy
+    docker run -d -p 6443:6443 -p 80:80 -p 9999:9999 --name k8s-haproxy k8s-haproxy
 SCRIPT
 
 Vagrant.configure("2") do |config|
