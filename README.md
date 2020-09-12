@@ -38,8 +38,8 @@ vagrant up
 #### From Bash prompt in VSCode - update remotehost and local path values
 ##### Username: vagrant     Password: vagrant
 ```
-rm /c/Users/username/.ssh/known_hosts
-scp vagrant@172.16.200.55:/home/vagrant/.kube/config /c/Users/username/.kube
+rm /c/Users/kemos/.ssh/known_hosts
+scp vagrant@172.30.250.55:$HOME/.kube/config /c/Users/kemos/.kube
 ```
 
 ### Add master node IP to your hosts file
