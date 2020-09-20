@@ -102,8 +102,11 @@ EOF
 deb https://apt.kubernetes.io/ kubernetes-xenial main
 EOF
 
+    KUBE_VERSION=1.18.8-00
+
     sudo apt-get update
-    sudo apt-get install -y kubelet kubeadm kubectl
+    sudo apt-get install -y kubelet=$KUBE_VERSION kubeadm=$KUBE_VERSION kubectl=$KUBE_VERSION
+    #sudo apt-get install -y kubelet kubeadm kubectl
 
     # exclude Kube components from getting updated during normal maintenance
     sudo apt-mark hold kubelet kubeadm kubectl
@@ -163,6 +166,10 @@ $configureNode = <<-SCRIPT
 
     # firewall config to allow necessary worker node ports - allowing kube subnet
     sudo ufw allow from 172.30.250.0/24
+
+    # required for setting up password less ssh between guest VMs
+    sudo sed -i "/^[^#]*PasswordAuthentication[[:space:]]no/c\PasswordAuthentication yes" /etc/ssh/sshd_config
+    sudo service sshd restart
 
     # Get and run script from master node to join cluster
     apt-get install -y sshpass

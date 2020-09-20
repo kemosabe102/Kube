@@ -39,7 +39,7 @@ vagrant up
 ##### Username: vagrant     Password: vagrant
 ```
 rm /c/Users/kemos/.ssh/known_hosts
-scp vagrant@172.30.250.55:$HOME/.kube/config /c/Users/kemos/.kube
+scp vagrant@172.30.250.55:/home/vagrant/.kube/config /c/Users/kemos/.kube
 ```
 
 ### Add master node IP to your hosts file
