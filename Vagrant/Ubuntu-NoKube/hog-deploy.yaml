@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: hog
+  name: hog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hog
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: hog
+    spec:
+      containers:
+      - image: progrium/stress
+        name: stress
+        resources:
+          limits:
+            memory: "500M"
+          requests:
+            memory: "500M"
+status: {}

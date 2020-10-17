@@ -53,64 +53,6 @@ EOF
 
     sudo sysctl --system
 
-    # (Install Docker CE)
-    ## docker versions and install instructions - https://kubernetes.io/docs/setup/production-environment/container-runtimes/#docker
-    ## Set up the repository:
-    ### Install packages to allow apt to use a repository over HTTPS
-    apt-get update && apt-get install -y \
-    apt-transport-https ca-certificates curl software-properties-common gnupg2
-
-    # Add Docker's official GPG key:
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-
-    # Add the Docker apt repository:
-    add-apt-repository \
-      "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) \
-      stable"
-
-    # Install Docker CE
-    apt-get update && apt-get install -y \
-        containerd.io=1.2.13-2 \
-        docker-ce=5:19.03.11~3-0~ubuntu-$(lsb_release -cs) \
-        docker-ce-cli=5:19.03.11~3-0~ubuntu-$(lsb_release -cs)
-
-    # Set up the Docker daemon
-    cat > /etc/docker/daemon.json <<EOF
-{
-  "exec-opts": ["native.cgroupdriver=systemd"],
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "100m"
-  },
-  "storage-driver": "overlay2"
-}
-EOF
-
-    mkdir -p /etc/systemd/system/docker.service.d
-
-    # Restart Docker
-    systemctl daemon-reload
-    systemctl restart docker
-
-    # start docker service on boot
-    sudo systemctl enable docker
-
-    # install kubeadm - https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-    curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-    cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
-deb https://apt.kubernetes.io/ kubernetes-xenial main
-EOF
-
-    KUBE_VERSION=1.19.2-00
-
-    sudo apt-get update
-    sudo apt-get install -y kubelet=$KUBE_VERSION kubeadm=$KUBE_VERSION kubectl=$KUBE_VERSION
-    #sudo apt-get install -y kubelet kubeadm kubectl
-
-    # exclude Kube components from getting updated during normal maintenance
-    sudo apt-mark hold kubelet kubeadm kubectl
-
     # add hostname to /etc/hosts file
     ETC_HOSTS=/etc/hosts
     IP_ADDR=`ip route get 1 | awk '{print $7;exit}'`
@@ -128,31 +70,9 @@ $configureMaster = <<-SCRIPT
     # firewall config to allow necessary master node ports - allowing kube subnet
     sudo ufw allow from 172.30.250.0/24
 
-    # install k8s master
-    HOST_NAME=$(hostname)
-    kubeadm init --apiserver-advertise-address=$IP_ADDR --apiserver-cert-extra-sans=$IP_ADDR,$HOST_NAME \
-    --node-name $HOST_NAME --pod-network-cidr=$POD_CIDR --control-plane-endpoint $HOST_NAME:6443
-
-    # copying credentials to regular user - vagrant
-    sudo mkdir -p $HOME/.kube
-    sudo --user=vagrant mkdir -p /home/vagrant/.kube
-    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-    sudo cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
-    sudo chown $(id -u):$(id -g) $HOME/.kube/config
-    sudo chown $(id -u vagrant):$(id -g vagrant) /home/vagrant/.kube/config
-
-    # Create join shell script with v=2 for more verbosity to help with troubleshooting
-    kubeadm token create --print-join-command >> /etc/kubeadm_join_cmd.sh
-    sudo sed -i '$ s/$/ --v=2/' /etc/kubeadm_join_cmd.sh
-    chmod +x /etc/kubeadm_join_cmd.sh
-
     # required for setting up password less ssh between guest VMs
     sudo sed -i "/^[^#]*PasswordAuthentication[[:space:]]no/c\PasswordAuthentication yes" /etc/ssh/sshd_config
     sudo service sshd restart
-
-    # install Calico pod network addon
-    # instructions: https://docs.projectcalico.org/getting-started/kubernetes/self-managed-onprem/onpremises
-    kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
 SCRIPT
 
 $configureNode = <<-SCRIPT
@@ -172,9 +92,7 @@ $configureNode = <<-SCRIPT
     sudo service sshd restart
 
     # Get and run script from master node to join cluster
-    apt-get install -y sshpass
-    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no vagrant@$MASTER_NODE_IP:/etc/kubeadm_join_cmd.sh .
-    sh ./kubeadm_join_cmd.sh
+    apt-get update && apt-get install -y sshpass
 SCRIPT
 
 Vagrant.configure("2") do |config|

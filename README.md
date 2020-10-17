@@ -38,8 +38,8 @@ vagrant up
 #### From Bash prompt in VSCode - update remotehost and local path values
 ##### Username: vagrant     Password: vagrant
 ```
-rm /c/Users/kemos/.ssh/known_hosts
-scp vagrant@172.30.250.55:/home/vagrant/.kube/config /c/Users/kemos/.kube
+rm /c/Users/user_name/.ssh/known_hosts
+scp vagrant@172.30.250.55:/home/vagrant/.kube/config /c/Users/user_name/.kube
 ```
 
 ### Add master node IP to your hosts file
@@ -47,10 +47,25 @@ scp vagrant@172.30.250.55:/home/vagrant/.kube/config /c/Users/kemos/.kube
 ##### Linux - /etc/hosts
 ```
 MASTER_NODE_IP	k8s-master
+NODE_1_IP	k8s-node-1
+NODE_2_IP	k8s-node-2
 ```
 
 ### Test connectivity
 ```
 kubectl config view
 kubectl get nodes
+```
+
+### SSH into nodes
+```
+ssh-keygen -t rsa -b 2048
+
+ssh-copy-id vagrant@k8s-master
+ssh-copy-id vagrant@k8s-node-1
+ssh-copy-id vagrant@k8s-node-2
+
+ssh vagrant@k8s-master
+ssh vagrant@k8s-node-1
+ssh vagrant@k8s-node-2
 ```
